@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="theme-color" content="#1E6B47">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Carburant Hunter</title>
+<style>
+/* Layout: poste de pilotage mobile. Jauge à segments en tête, trois chiffres clés, saisie, puis journal des relevés. */
+:root {
+  --bg: #EDF0EB;
+  --surface: #FAFBF9;
+  --ink: #17231C;
+  --muted: #5A695F;
+  --line: #D2DAD3;
+  --accent: #1E6B47;
+  --accent-ink: #FFFFFF;
+  --warn: #B4500B;
+  --danger: #B3261E;
+  --seg-empty: #DCE3DD;
+  --font-display: "Arial Narrow", "Roboto Condensed", "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1411; --surface: #161E19; --ink: #E6EEE8; --muted: #92A399; --line: #26332B;
+    --accent: #4CC48A; --accent-ink: #06130C; --warn: #F0A262; --danger: #F2867F; --seg-empty: #222D26;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1411; --surface: #161E19; --ink: #E6EEE8; --muted: #92A399; --line: #26332B;
+  --accent: #4CC48A; --accent-ink: #06130C; --warn: #F0A262; --danger: #F2867F; --seg-empty: #222D26;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.45;
+  padding-block: 20px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+h1, h2 { font-family: var(--font-display); font-weight: 700; margin: 0; text-wrap: balance; }
+h1 { font-size: 2.1rem; line-height: 1.05; letter-spacing: 0.01em; }
+h2 { font-size: 1.35rem; letter-spacing: 0.02em; }
+.eyebrow { font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin: 0 0 4px; }
+.num { font-variant-numeric: tabular-nums; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+.notice { border: 1px solid var(--warn); color: var(--warn); border-radius: 8px; padding: 10px 12px; font-size: 0.92rem; }
+.notice[hidden] { display: none; }
+
+.top { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+details.settings { font-size: 0.92rem; }
+details.settings summary { cursor: pointer; color: var(--muted); font-weight: 500; padding: 6px 0; }
+details.settings .fields { display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
+
+/* Jauge */
+.gauge-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.gauge-big { font-family: var(--font-display); font-size: 2.6rem; font-weight: 700; line-height: 1; }
+.gauge-big small { font-size: 1.1rem; font-weight: 600; color: var(--muted); margin-left: 4px; }
+.segs { display: flex; gap: 5px; margin: 14px 0 6px; }
+.seg { flex: 1; height: 46px; border-radius: 4px; background: var(--seg-empty); border: 1px solid var(--line); }
+.seg.on { background: var(--accent); border-color: var(--accent); }
+.seg.on.low { background: var(--warn); border-color: var(--warn); }
+.scale { display: flex; justify-content: space-between; font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.gauge-sub { margin: 10px 0 0; color: var(--muted); font-size: 0.92rem; }
+
+/* Alerte */
+.alert { display: flex; flex-direction: column; gap: 2px; background: var(--warn); color: var(--accent-ink); border-radius: 10px; padding: 12px 14px; }
+.alert[hidden] { display: none; }
+.alert.crit { background: var(--danger); }
+.alert strong { font-family: var(--font-display); font-size: 1.35rem; letter-spacing: 0.01em; }
+.alert span { font-size: 0.95rem; }
+.notif { margin-top: 10px; }
+
+/* Trajets */
+.enroute { border: 1px dashed var(--accent); border-radius: 8px; padding: 10px 12px; margin: 10px 0 4px; font-size: 0.95rem; }
+.enroute[hidden] { display: none; }
+.enroute b { font-family: var(--font-display); font-size: 1.15rem; }
+.sub-h { font-family: var(--font-display); font-size: 1.1rem; font-weight: 600; margin: 18px 0 0; color: var(--muted); letter-spacing: 0.02em; }
+.trip .km { font-size: 1.2rem; }
+.badge.go { border-color: var(--warn); color: var(--warn); }
+
+/* Prévision */
+.next-big { font-family: var(--font-display); font-size: 2.6rem; font-weight: 700; line-height: 1; margin-top: 10px; }
+.next-big small { font-size: 1.1rem; font-weight: 600; color: var(--muted); margin-left: 6px; }
+.track { height: 12px; background: var(--seg-empty); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-top: 12px; }
+.track[hidden] { display: none; }
+.fill { height: 100%; background: var(--accent); width: 0; }
+.fill.late { background: var(--warn); }
+.cur { margin-top: 14px; max-width: 260px; }
+.fc { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; }
+.fc li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 0.95rem; }
+.fc li:first-child { border-top: 0; }
+.fc .k { font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; }
+.fc .m { color: var(--muted); }
+
+/* Chiffres clés */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 10px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+.stat .v { font-family: var(--font-display); font-size: 2rem; font-weight: 700; line-height: 1.05; }
+.stat .u { font-size: 0.82rem; color: var(--muted); font-weight: 500; }
+.stat .l { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+
+/* Formulaire */
+.mode { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 12px 0 14px; }
+.mode button {
+  font: inherit; font-weight: 600; padding: 11px 8px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: transparent; color: var(--ink);
+}
+.mode button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; align-items: end; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; font-weight: 600; color: var(--muted); min-width: 0; }
+input {
+  font: inherit; font-size: 1.05rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 10px 12px; width: 100%; min-width: 0; font-variant-numeric: tabular-nums;
+}
+input:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.submit {
+  font: inherit; font-weight: 600; font-size: 1.05rem; margin-top: 14px; width: 100%; padding: 13px;
+  background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px; cursor: pointer;
+}
+.submit:disabled { opacity: 0.6; cursor: default; }
+.msg { margin: 10px 0 0; font-size: 0.92rem; min-height: 1.3em; }
+.msg.err { color: var(--danger); }
+.hint { font-size: 0.82rem; color: var(--muted); margin: 8px 0 0; }
+
+/* Journal */
+.log { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; }
+.row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.row:first-child { border-top: 0; }
+.row .main { min-width: 0; }
+.row .km { font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; line-height: 1.1; }
+.row .km span { font-size: 0.95rem; font-weight: 600; color: var(--muted); }
+.badge { display: inline-block; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.04em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); margin-left: 8px; vertical-align: 3px; }
+.row .km .badge.plein { background: var(--accent); color: var(--accent-ink); }
+label[hidden] { display: none; }
+.row .detail { font-size: 0.88rem; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+.row .date { font-size: 0.85rem; color: var(--muted); }
+.del { font: inherit; font-size: 0.82rem; align-self: flex-start; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; cursor: pointer; white-space: nowrap; }
+.del.confirm { color: var(--danger); border-color: var(--danger); font-weight: 600; }
+.bk { display: flex; gap: 10px; margin-top: 12px; }
+.bk .del { font-size: 0.95rem; padding: 10px 16px; color: var(--ink); }
+.empty { color: var(--muted); margin: 12px 0 0; }
+@media (prefers-reduced-motion: no-preference) { .seg { transition: background 0.3s; } }
+</style>
+
+</head>
+<body>
+<main>
+  <div class="notice" id="offline" hidden>Ce navigateur refuse d'enregistrer les relevés : ils seront perdus à la fermeture. Utilise Exporter pour garder une copie.</div>
+
+  <div class="alert" id="alert" role="alert" hidden><strong id="alert-t"></strong><span id="alert-d"></span></div>
+
+  <header class="top">
+    <div>
+      <p class="eyebrow">Changan Hunter 4×4</p>
+      <h1>Suivi carburant</h1>
+    </div>
+    <details class="settings">
+      <summary>Réglages</summary>
+      <div class="fields">
+        <label for="cap">Réservoir (litres)<input id="cap" type="number" inputmode="decimal" min="1" step="0.5" value="80"></label>
+        <label for="bars">Barres de la jauge<input id="bars" type="number" inputmode="numeric" min="2" max="20" step="1" value="8"></label>
+        <label for="alerte">Alerte avant la barre (km)<input id="alerte" type="number" inputmode="numeric" min="1" max="200" step="1" value="20"></label>
+      </div>
+      <button type="button" class="del notif" id="notif-btn" hidden>Activer les notifications du téléphone</button>
+      <p class="hint">Compte les barres sur ton tableau de bord quand le plein est fait, puis corrige ce nombre si besoin.</p>
+    </details>
+  </header>
+
+  <section class="card" aria-labelledby="g-title">
+    <div class="gauge-head">
+      <h2 id="g-title">Jauge estimée</h2>
+      <div class="gauge-big num" id="g-big"></div>
+    </div>
+    <div class="segs" id="segs" role="img" aria-label="Jauge"></div>
+    <div class="scale"><span>Vide</span><span>Plein</span></div>
+    <p class="gauge-sub" id="g-sub"></p>
+  </section>
+
+  <section class="card" aria-labelledby="t-title">
+    <h2 id="t-title">Trajet</h2>
+    <div class="enroute" id="t-open" hidden></div>
+    <form id="tform" novalidate>
+      <div class="fields">
+        <label for="t-lieu"><span id="t-lieu-l">Lieu de départ</span><input id="t-lieu" type="text" autocomplete="off" list="lieux" placeholder="Ex. Daloa"></label>
+        <label for="t-km"><span id="t-km-l">Compteur au départ (km)</span><input id="t-km" type="number" inputmode="numeric" min="0" step="1"></label>
+        <label for="t-date">Date<input id="t-date" type="date"></label>
+      </div>
+      <button class="submit" id="t-submit" type="submit">Démarrer le trajet</button>
+      <p class="msg" id="t-msg" role="status" aria-live="polite"></p>
+    </form>
+    <datalist id="lieux"></datalist>
+    <h3 class="sub-h">Derniers trajets</h3>
+    <ul class="log" id="tlog"></ul>
+  </section>
+
+  <section class="stats" id="stats" aria-label="Chiffres clés"></section>
+
+  <section class="card" aria-labelledby="p-title">
+    <h2 id="p-title">Prochaine barre</h2>
+    <div class="next-big num" id="p-big"></div>
+    <p class="gauge-sub" id="p-sub"></p>
+    <div class="track" id="p-track" hidden><div class="fill" id="p-fill"></div></div>
+    <p class="gauge-sub" id="p-left"></p>
+    <label for="cur" class="cur">Compteur actuel (facultatif)<input id="cur" type="number" inputmode="numeric" min="0" step="1" placeholder="Rempli par tes trajets"></label>
+    <ol class="fc" id="fc"></ol>
+    <p class="hint">Prévision calculée avec la distance moyenne de tes barres. Les dernières barres durent souvent moins longtemps, garde de la marge.</p>
+  </section>
+
+  <section class="card" aria-labelledby="f-title">
+    <h2 id="f-title">Nouveau relevé</h2>
+    <div class="mode" role="group" aria-label="Type de relevé">
+      <button type="button" id="m-barre" aria-pressed="true">Barre perdue</button>
+      <button type="button" id="m-plein" aria-pressed="false">Plein fait</button>
+    </div>
+    <form id="form" novalidate>
+      <div class="fields">
+        <label for="km">Compteur (km)<input id="km" type="number" inputmode="numeric" min="0" step="1" placeholder="71 116"></label>
+        <label for="date">Date<input id="date" type="date"></label>
+        <label for="n" id="n-wrap">Barres perdues depuis le plein<input id="n" type="number" inputmode="numeric" min="1" step="1"></label>
+        <label for="litres" id="l-wrap" hidden>Litres ajoutés (facultatif)<input id="litres" type="number" inputmode="decimal" min="0" step="0.01" placeholder="62,5"></label>
+      </div>
+      <button class="submit" id="submit" type="submit">Enregistrer</button>
+      <p class="msg" id="msg" role="status" aria-live="polite"></p>
+    </form>
+    <p class="hint" id="f-hint"></p>
+  </section>
+
+  <section class="card" aria-labelledby="j-title">
+    <h2 id="j-title">Journal des relevés</h2>
+    <ul class="log" id="log"></ul>
+  </section>
+
+  <section class="card" aria-labelledby="b-title">
+    <h2 id="b-title">Sauvegarde</h2>
+    <p class="hint">Les relevés sont gardés dans ce navigateur, sur ce téléphone. Exporte-les de temps en temps pour avoir une copie.</p>
+    <div class="bk">
+      <button type="button" class="del" id="exp">Exporter</button>
+      <button type="button" class="del" id="imp-btn">Importer</button>
+      <input id="imp" type="file" accept="application/json,.json" hidden>
+    </div>
+    <p class="msg" id="bk-msg" role="status" aria-live="polite"></p>
+  </section>
+</main>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var nf = function (x, d) { return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 }).format(x); };
+  var fdate = function (s) { var p = String(s || "").split("-"); return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : ""; };
+  function h(tag, props) {
+    var el = document.createElement(tag), k, i, kids = Array.prototype.slice.call(arguments, 2).flat(Infinity);
+    for (k in (props || {})) {
+      var v = props[k];
+      if (k === "class") el.className = v;
+      else if (k.slice(0, 2) === "on") el.addEventListener(k.slice(2), v);
+      else if (v !== false && v != null) el.setAttribute(k, v === true ? "" : v);
+    }
+    for (i = 0; i < kids.length; i++) { var c = kids[i]; if (c == null || c === false) continue; el.append(c.nodeType ? c : document.createTextNode(c)); }
+    return el;
+  }
+
+  var state = { entries: [], cap: 80, bars: 8, alertKm: 20, mode: "barre", nTouched: false, tTouched: false, tMode: null, pendingDelete: null, cur: null };
+  var isFuel = function (e) { return e.type === "barre" || e.type === "plein"; };
+  var isTrip = function (e) { return e.type === "trajet"; };
+  var today = function () { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+  function openTrip() {
+    var o = state.entries.filter(function (e) { return isTrip(e) && !(e.kmArrivee > 0); });
+    o.sort(function (a, b) { return a.kmDepart - b.kmDepart; });
+    return o[o.length - 1] || null;
+  }
+  function trips() {
+    return state.entries.filter(isTrip).sort(function (a, b) {
+      return (b.kmDepart - a.kmDepart) || String(b.date).localeCompare(String(a.date));
+    });
+  }
+  // Compteur le plus récent connu : relevés, trajets et saisie manuelle
+  function curKm() {
+    var m = state.cur || 0;
+    state.entries.forEach(function (e) {
+      [e.km, e.kmDepart, e.kmArrivee].forEach(function (v) { if (v > m) m = v; });
+    });
+    return m || null;
+  }
+  var store = null;   // null = affichage sans enregistrement
+  var localId = 0;
+
+  /* ---------- Calculs ---------- */
+  function analyze() {
+    var cap = state.cap, bars = state.bars, lper = cap / bars;
+    var sorted = state.entries.filter(isFuel).sort(function (a, b) { return (a.km - b.km) || (a.type === "plein" ? -1 : 1); });
+    var prev = null, lastPlein = null, rows = [], sumKm = 0, sumBars = 0, realL = 0, realKm = 0, minKB = null, maxKB = null;
+    sorted.forEach(function (e) {
+      var r = Object.assign({}, e);
+      if (e.type === "plein") {
+        if (lastPlein && e.litres > 0 && e.km > lastPlein.km) {
+          r.realKm = e.km - lastPlein.km; r.real = e.litres / r.realKm * 100;
+          realL += e.litres; realKm += r.realKm;
+        }
+        lastPlein = e; prev = { km: e.km, n: 0 };
+      } else {
+        if (prev) {
+          r.dkm = e.km - prev.km; r.dn = e.n - prev.n;
+          if (r.dn > 0 && r.dkm > 0) { r.kmBar = r.dkm / r.dn; r.l100 = lper * r.dn / r.dkm * 100; sumKm += r.dkm; sumBars += r.dn;
+            minKB = minKB == null ? r.kmBar : Math.min(minKB, r.kmBar); maxKB = maxKB == null ? r.kmBar : Math.max(maxKB, r.kmBar); }
+        }
+        prev = { km: e.km, n: e.n };
+      }
+      rows.push(r);
+    });
+    var last = sorted[sorted.length - 1] || null;
+    var lost = last ? (last.type === "plein" ? 0 : last.n) : 0;
+    var avgKmBar = sumBars > 0 ? sumKm / sumBars : null;
+    return {
+      rows: rows, last: last, lost: lost, remaining: Math.max(0, bars - lost), lper: lper,
+      minKmBar: minKB, maxKmBar: maxKB, avgKmBar: avgKmBar, l100: avgKmBar ? lper / avgKmBar * 100 : null,
+      realL100: realKm > 0 ? realL / realKm * 100 : null
+    };
+  }
+
+  /* ---------- Affichage ---------- */
+  function render() {
+    var a = analyze(), bars = state.bars;
+    var rem = a.remaining;
+
+    $("g-big").replaceChildren(h("span", null, "≈ " + nf(rem * a.lper)), h("small", null, "litres"));
+    var segs = [];
+    for (var i = 0; i < bars; i++) segs.push(h("div", { class: "seg" + (i < rem ? " on" : "") + (rem <= 1 && i < rem ? " low" : "") }));
+    $("segs").replaceChildren.apply($("segs"), segs);
+    $("segs").setAttribute("aria-label", rem + " barres restantes sur " + bars);
+
+    var sub;
+    if (!a.last) sub = "Aucun relevé pour le moment. Saisis le compteur au premier plein.";
+    else if (a.last.type === "plein") sub = "Plein fait à " + nf(a.last.km) + " km. Jauge pleine, " + bars + " barres.";
+    else sub = "Dernier relevé : barre " + a.last.n + " perdue à " + nf(a.last.km) + " km. Il reste " + rem + " barre" + (rem > 1 ? "s" : "") + " sur " + bars + ".";
+    $("g-sub").textContent = sub;
+
+    var tiles = [];
+    tiles.push(stat(a.l100 ? nf(a.l100, 1) : "–", "L/100 km", "Consommation estimée par les barres"));
+    tiles.push(stat(a.avgKmBar ? nf(a.avgKmBar) : "–", "km", "Distance moyenne par barre"));
+    tiles.push(stat(a.avgKmBar && rem ? "≈ " + nf(rem * a.avgKmBar) : "–", "km", "Autonomie restante estimée"));
+    if (a.realL100) tiles.push(stat(nf(a.realL100, 1), "L/100 km", "Mesurée aux pleins"));
+    $("stats").replaceChildren.apply($("stats"), tiles);
+
+    renderNext(a);
+    renderAlert(a);
+    renderTrips(a);
+
+    // Journal
+    var log = $("log");
+    if (!a.rows.length) { log.replaceChildren(h("li", { class: "empty" }, "Le journal est vide.")); }
+    else {
+      var items = a.rows.slice().reverse().map(function (r) { return row(r); });
+      log.replaceChildren.apply(log, items);
+    }
+
+    // Formulaire : valeur par défaut de la barre
+    if (!state.nTouched) $("n").value = a.last && a.last.type !== "plein" ? Math.min(bars, a.last.n + 1) : 1;
+    $("n").max = bars;
+    $("f-hint").textContent = state.mode === "barre"
+      ? "Note le compteur au moment précis où la barre disparaît du tableau de bord."
+      : "Remplis jusqu'au déclic du pistolet. Avec les litres, on calcule la vraie consommation depuis le plein précédent.";
+  }
+
+  function renderNext(a) {
+    var big = $("p-big"), sub = $("p-sub"), left = $("p-left"), track = $("p-track"), fc = $("fc");
+    track.hidden = true; left.textContent = ""; fc.replaceChildren();
+    if (!a.last || !a.avgKmBar) {
+      big.textContent = "–";
+      sub.textContent = "Enregistre un plein puis au moins une barre perdue pour obtenir une prévision.";
+      return;
+    }
+    if (a.remaining <= 0) {
+      big.textContent = "Jauge vide";
+      sub.textContent = "Plus de barre à anticiper. Fais le plein.";
+      return;
+    }
+    var base = a.last.km, nextN = a.lost + 1, avg = a.avgKmBar;
+    var nextKm = base + avg;
+    big.replaceChildren("≈ " + nf(nextKm), h("small", null, "km au compteur"));
+    var range = a.minKmBar !== a.maxKmBar ? "entre " + nf(base + a.minKmBar) + " et " + nf(base + a.maxKmBar) + " km" : "vers " + nf(nextKm) + " km";
+    sub.textContent = "La barre " + nextN + " devrait disparaître " + range + " (moyenne : " + nf(avg) + " km par barre, depuis " + nf(base) + " km).";
+
+    var cur = curKm();
+    if (cur != null && cur >= base) {
+      var pct = Math.min(1, (cur - base) / avg);
+      var diff = nextKm - cur;
+      track.hidden = false;
+      $("p-fill").style.width = Math.round(pct * 100) + "%";
+      $("p-fill").className = "fill" + (diff <= 0 ? " late" : "");
+      left.textContent = diff > 0
+        ? "Encore ≈ " + nf(diff) + " km avant la perte de la barre " + nextN + "."
+        : "Tu as dépassé la moyenne de " + nf(-diff) + " km : la barre " + nextN + " peut disparaître d'un instant à l'autre.";
+    } else if (cur != null) {
+      left.textContent = "Le compteur actuel est inférieur au dernier relevé (" + nf(base) + " km).";
+    }
+
+    var items = [];
+    for (var k = 1; nextN + k - 1 <= state.bars; k++) {
+      var n = nextN + k - 1, last = n === state.bars;
+      items.push(h("li", null,
+        h("span", { class: "k" }, last ? "Barre " + n + " · jauge vide" : "Barre " + n),
+        h("span", { class: "m num" }, "≈ " + nf(base + k * avg) + " km")));
+    }
+    fc.replaceChildren.apply(fc, items);
+  }
+
+  /* ---------- Alerte barre ---------- */
+  function alertInfo(a) {
+    if (!a.last || !a.avgKmBar || a.remaining <= 0) return null;
+    var cur = curKm(); if (cur == null || cur < a.last.km) return null;
+    var nextN = a.lost + 1, nextKm = a.last.km + a.avgKmBar, diff = nextKm - cur;
+    if (diff > state.alertKm) return null;
+    var after = a.remaining - 1;
+    var title = diff > 0 ? "Barre " + nextN + " dans ≈ " + nf(diff) + " km" : "Barre " + nextN + " attendue maintenant";
+    var detail = diff > 0
+      ? "Prévue vers " + nf(nextKm) + " km au compteur (actuel : " + nf(cur) + " km). Note le compteur dès qu'elle disparaît."
+      : "Tu as dépassé la moyenne de " + nf(-diff) + " km. Note le compteur dès qu'elle disparaît.";
+    if (after === 0) detail += " Après elle, la jauge sera vide : fais le plein au plus vite.";
+    else if (after === 1) detail += " Après elle, il ne restera qu'une barre : prévois le plein.";
+    else detail += " Il restera " + after + " barres.";
+    return { key: "b" + a.last.km + "-" + nextN, title: title, detail: detail, crit: after <= 1 };
+  }
+  function renderAlert(a) {
+    var info = alertInfo(a), box = $("alert");
+    box.hidden = !info;
+    if (!info) return;
+    box.className = "alert" + (info.crit ? " crit" : "");
+    $("alert-t").textContent = info.title;
+    $("alert-d").textContent = info.detail;
+  }
+  // Notification du téléphone : seulement dans l'application installée (avec service worker)
+  function canNotify() {
+    return "Notification" in window && navigator.serviceWorker && navigator.serviceWorker.controller;
+  }
+  function notifyIfNeeded() {
+    var info = alertInfo(analyze());
+    if (!info) return;
+    try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
+    if (!canNotify() || Notification.permission !== "granted") return;
+    var done = ""; try { done = localStorage.getItem("hunter-notified") || ""; } catch (e) {}
+    if (done === info.key) return;
+    try { localStorage.setItem("hunter-notified", info.key); } catch (e) {}
+    navigator.serviceWorker.ready.then(function (r) {
+      return r.showNotification(info.title, { body: info.detail, icon: "icon-192.png", tag: "barre", vibrate: [200, 100, 200] });
+    }).catch(function () {});
+  }
+  function setupNotifButton() {
+    var b = $("notif-btn");
+    if (!canNotify() || Notification.permission === "granted" || Notification.permission === "denied") { b.hidden = true; return; }
+    b.hidden = false;
+  }
+  $("notif-btn").addEventListener("click", function () {
+    Notification.requestPermission().then(function () { setupNotifButton(); }).catch(function () {});
+  });
+
+  /* ---------- Trajets ---------- */
+  function renderTrips(a) {
+    var o = openTrip(), mode = o ? "arrivee" : "depart";
+    if (state.tMode !== mode) { state.tMode = mode; state.tTouched = false; }
+    $("t-open").hidden = !o;
+    if (o) {
+      $("t-open").replaceChildren("En route depuis ", h("b", null, o.depart), " · départ à ", h("b", { class: "num" }, nf(o.kmDepart) + " km"), " le " + fdate(o.date));
+    }
+    $("t-lieu-l").textContent = o ? "Lieu d'arrivée" : "Lieu de départ";
+    $("t-km-l").textContent = o ? "Compteur à l'arrivée (km)" : "Compteur au départ (km)";
+    $("t-submit").textContent = o ? "Enregistrer l'arrivée" : "Démarrer le trajet";
+    var list = trips();
+    if (!state.tTouched) {
+      var lastDone = list.filter(function (t) { return t.kmArrivee > 0; })[0];
+      $("t-lieu").value = !o && lastDone ? lastDone.arrivee : "";
+      $("t-km").value = o ? "" : (curKm() || "");
+      $("t-date").value = today();
+    }
+    // Lieux déjà utilisés, pour la saisie rapide
+    var seen = {};
+    list.forEach(function (t) { [t.depart, t.arrivee].forEach(function (p) { if (p) seen[p] = 1; }); });
+    $("lieux").replaceChildren.apply($("lieux"), Object.keys(seen).map(function (p) { return h("option", { value: p }); }));
+
+    var tl = $("tlog");
+    if (!list.length) { tl.replaceChildren(h("li", { class: "empty" }, "Aucun trajet enregistré.")); return; }
+    tl.replaceChildren.apply(tl, list.slice(0, 20).map(function (t) { return tripRow(t, a); }));
+  }
+  function tripRow(t, a) {
+    var done = t.kmArrivee > 0, dist = done ? t.kmArrivee - t.kmDepart : null;
+    var detail = done
+      ? nf(t.kmDepart) + " → " + nf(t.kmArrivee) + " km" + (a.l100 ? " · ≈ " + nf(dist * a.l100 / 100, 1) + " L" + (a.lper ? " (≈ " + nf(dist * a.l100 / 100 / a.lper, 1) + " barre)" : "") : "")
+      : "Départ à " + nf(t.kmDepart) + " km";
+    var confirm = state.pendingDelete === t.id;
+    return h("li", { class: "row trip" },
+      h("div", { class: "main" },
+        h("div", { class: "km" }, t.depart + " → " + (done ? t.arrivee : "…"), " ",
+          done ? h("span", { class: "num" }, nf(dist) + " km") : h("span", { class: "badge go" }, "En cours")),
+        h("div", { class: "date" }, fdate(t.date)),
+        h("div", { class: "detail num" }, detail)),
+      h("button", { class: "del" + (confirm ? " confirm" : ""), type: "button", "aria-label": "Supprimer le trajet " + t.depart, onclick: function () { onDelete(t.id); } },
+        confirm ? "Confirmer ?" : "Supprimer"));
+  }
+  function tsay(text, err) { var m = $("t-msg"); m.textContent = text; m.className = "msg" + (err ? " err" : ""); }
+  ["t-lieu", "t-km", "t-date"].forEach(function (id) { $(id).addEventListener("input", function () { state.tTouched = true; }); });
+  var tbusy = false;
+  $("tform").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    if (tbusy) return;
+    var o = openTrip(), lieu = $("t-lieu").value.trim(), km = parseFloat($("t-km").value), date = $("t-date").value || today();
+    if (!lieu) { tsay(o ? "Saisis le lieu d'arrivée." : "Saisis le lieu de départ.", true); return; }
+    if (!(km > 0)) { tsay("Saisis le kilométrage du compteur.", true); return; }
+    km = Math.round(km);
+    if (o && km < o.kmDepart) { tsay("Le compteur à l'arrivée doit être supérieur ou égal à celui du départ (" + nf(o.kmDepart) + " km).", true); return; }
+    tbusy = true; $("t-submit").disabled = true;
+    var p = o
+      ? store.update(o.id, { arrivee: lieu, kmArrivee: km, dateArrivee: date })
+      : store.add({ type: "trajet", depart: lieu, kmDepart: km, date: date });
+    p.then(function () {
+      tsay(o ? "Arrivée enregistrée : " + nf(km - o.kmDepart) + " km parcourus." : "Trajet démarré depuis " + lieu + ".");
+      state.tTouched = false; render(); notifyIfNeeded();
+    }).catch(function () {
+      tsay("Enregistrement impossible. Vérifie que tu es connecté, puis réessaie.", true);
+    }).then(function () { tbusy = false; $("t-submit").disabled = false; });
+  });
+
+  function stat(v, u, l) {
+    return h("div", { class: "stat" }, h("div", { class: "v num" }, v, " ", h("span", { class: "u" }, u)), h("div", { class: "l" }, l));
+  }
+
+  function row(r) {
+    var detail = "";
+    if (r.type === "plein") {
+      var parts = [];
+      if (r.litres > 0) parts.push(nf(r.litres, 1) + " L ajoutés");
+      if (r.real) parts.push(nf(r.realKm) + " km depuis le plein précédent : " + nf(r.real, 1) + " L/100 km");
+      detail = parts.join(" · ") || "Plein sans litres renseignés";
+    } else if (r.dkm != null && r.dn > 0 && r.dkm > 0) {
+      detail = "+" + nf(r.dkm) + " km pour " + r.dn + " barre" + (r.dn > 1 ? "s" : "") + " · " + nf(r.kmBar) + " km/barre · ≈ " + nf(r.l100, 1) + " L/100 km";
+    } else if (r.dkm != null) {
+      detail = "+" + nf(r.dkm) + " km, sans nouvelle barre";
+    } else {
+      detail = "Premier relevé de la série";
+    }
+    var confirm = state.pendingDelete === r.id;
+    return h("li", { class: "row" },
+      h("div", { class: "main" },
+        h("div", { class: "km num" }, nf(r.km), " ", h("span", null, "km"),
+          h("span", { class: "badge" + (r.type === "plein" ? " plein" : "") }, r.type === "plein" ? "Plein" : "Barre " + r.n)),
+        h("div", { class: "date" }, fdate(r.date)),
+        h("div", { class: "detail" }, detail)),
+      h("button", { class: "del" + (confirm ? " confirm" : ""), type: "button", "aria-label": "Supprimer le relevé de " + nf(r.km) + " km", onclick: function () { onDelete(r.id); } },
+        confirm ? "Confirmer ?" : "Supprimer"));
+  }
+
+  /* ---------- Actions ---------- */
+  function say(text, err) { var m = $("msg"); m.textContent = text; m.className = "msg" + (err ? " err" : ""); }
+
+  function setMode(m) {
+    state.mode = m;
+    $("m-barre").setAttribute("aria-pressed", m === "barre");
+    $("m-plein").setAttribute("aria-pressed", m === "plein");
+    $("n-wrap").hidden = m !== "barre";
+    $("l-wrap").hidden = m !== "plein";
+    say("");
+    render();
+  }
+
+  var timer = null;
+  function onDelete(id) {
+    if (state.pendingDelete === id) {
+      state.pendingDelete = null;
+      store.remove(id).catch(function () { say("Suppression impossible pour le moment.", true); });
+      return;
+    }
+    state.pendingDelete = id; render();
+    clearTimeout(timer);
+    timer = setTimeout(function () { state.pendingDelete = null; render(); }, 4000);
+  }
+
+  var busy = false;
+  $("form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    if (busy) return;
+    var km = parseFloat($("km").value), date = $("date").value;
+    if (!(km > 0)) { say("Saisis le kilométrage du compteur.", true); return; }
+    if (!date) { say("Choisis la date.", true); return; }
+    var data = { type: state.mode, km: Math.round(km), date: date };
+    if (state.mode === "barre") {
+      var n = parseInt($("n").value, 10);
+      if (!(n >= 1 && n <= state.bars)) { say("Le nombre de barres perdues doit être entre 1 et " + state.bars + ".", true); return; }
+      data.n = n;
+    } else {
+      var l = parseFloat($("litres").value);
+      if ($("litres").value !== "" && !(l > 0)) { say("Les litres doivent être un nombre positif.", true); return; }
+      if (l > 0) data.litres = l;
+    }
+    busy = true; $("submit").disabled = true;
+    store.add(data).then(function () {
+      say(state.mode === "plein" ? "Plein enregistré." : "Barre " + data.n + " enregistrée.");
+      $("km").value = ""; $("litres").value = ""; state.nTouched = false; render();
+    }).catch(function () {
+      say("Enregistrement impossible. Vérifie que tu es connecté, puis réessaie.", true);
+    }).then(function () { busy = false; $("submit").disabled = false; });
+  });
+  $("n").addEventListener("input", function () { state.nTouched = true; });
+  $("cur").addEventListener("input", function () {
+    var v = parseFloat($("cur").value);
+    state.cur = v > 0 ? v : null;
+    try { localStorage.setItem("hunter-cur", state.cur == null ? "" : String(state.cur)); } catch (e) {}
+    render();
+  });
+  $("cur").addEventListener("change", notifyIfNeeded);
+  try {
+    var saved = parseFloat(localStorage.getItem("hunter-cur"));
+    if (saved > 0) { state.cur = saved; $("cur").value = saved; }
+  } catch (e) {}
+  $("m-barre").addEventListener("click", function () { setMode("barre"); });
+  $("m-plein").addEventListener("click", function () { setMode("plein"); });
+
+  function onConfig() {
+    var cap = parseFloat($("cap").value), bars = parseInt($("bars").value, 10), al = parseInt($("alerte").value, 10);
+    if (!(cap > 0) || !(bars >= 2 && bars <= 20) || !(al >= 1 && al <= 200)) return;
+    state.cap = cap; state.bars = bars; state.alertKm = al; state.nTouched = false; render();
+    store.saveConfig({ capacite: cap, barres: bars, alerte: al }).catch(function () {});
+  }
+  $("cap").addEventListener("change", onConfig);
+  $("bars").addEventListener("change", onConfig);
+  $("alerte").addEventListener("change", onConfig);
+  function applyConfig(c) {
+    if (!c || !(c.capacite > 0) || !(c.barres >= 2)) return;
+    state.cap = c.capacite; state.bars = c.barres;
+    if (c.alerte >= 1) state.alertKm = c.alerte;
+    $("cap").value = state.cap; $("bars").value = state.bars; $("alerte").value = state.alertKm;
+  }
+  setupNotifButton();
+  if (navigator.serviceWorker) navigator.serviceWorker.addEventListener("controllerchange", setupNotifButton);
+
+  /* ---------- Stockage ---------- */
+  var d = new Date();
+  $("date").value = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  setMode("barre");
+
+  var KEY = "hunter-data-v1";
+  var SEED = [
+    { id: "s1", type: "plein", km: 70774, date: "2026-10-18" },
+    { id: "s2", type: "barre", km: 70909, date: "2026-10-18", n: 1 },
+    { id: "s3", type: "barre", km: 71029, date: "2026-10-19", n: 2 },
+    { id: "s4", type: "barre", km: 71116, date: "2026-10-20", n: 3 }
+  ];
+  function persist() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ entries: state.entries, cfg: { capacite: state.cap, barres: state.bars, alerte: state.alertKm } }));
+    } catch (e) { $("offline").hidden = false; }
+  }
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) {
+        var o = JSON.parse(raw);
+        state.entries = Array.isArray(o.entries) ? o.entries : [];
+        applyConfig(o.cfg);
+        return;
+      }
+    } catch (e) { $("offline").hidden = false; }
+    state.entries = SEED.slice();
+    persist();
+  }
+  store = {
+    add: function (data) {
+      state.entries.push(Object.assign({ id: "e" + Date.now() + "-" + (++localId) }, data));
+      persist(); render(); return Promise.resolve();
+    },
+    remove: function (id) {
+      state.entries = state.entries.filter(function (e) { return e.id !== id; });
+      persist(); render(); return Promise.resolve();
+    },
+    update: function (id, data) {
+      state.entries = state.entries.map(function (e) { return e.id === id ? Object.assign({}, e, data) : e; });
+      persist(); return Promise.resolve();
+    },
+    saveConfig: function () { persist(); return Promise.resolve(); }
+  };
+  load();
+  $("cap").value = state.cap; $("bars").value = state.bars; $("alerte").value = state.alertKm;
+  render();
+
+  $("exp").addEventListener("click", function () {
+    var payload = JSON.stringify({ entries: state.entries, cfg: { capacite: state.cap, barres: state.bars, alerte: state.alertKm } }, null, 1);
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
+    a.download = "carburant-hunter-sauvegarde.json";
+    document.body.append(a); a.click(); a.remove();
+    $("bk-msg").textContent = "Sauvegarde exportée dans tes téléchargements.";
+  });
+  $("imp-btn").addEventListener("click", function () { $("imp").click(); });
+  $("imp").addEventListener("change", function (ev) {
+    var f = ev.target.files[0]; if (!f) return;
+    var r = new FileReader();
+    r.onload = function () {
+      try {
+        var o = JSON.parse(r.result);
+        if (!o || !Array.isArray(o.entries)) throw new Error("format");
+        var good = o.entries.filter(function (e) {
+          if (!e || typeof e.date !== "string") return false;
+          if (e.type === "trajet") return typeof e.depart === "string" && e.kmDepart > 0;
+          return (e.type === "barre" || e.type === "plein") && e.km > 0 && (e.type === "plein" || e.n >= 1);
+        }).map(function (e, i) { return Object.assign({ id: "i" + Date.now() + "-" + i }, e); });
+        state.entries = good;
+        applyConfig(o.cfg);
+        state.nTouched = false; persist(); render();
+        $("bk-msg").textContent = good.length + " relevé" + (good.length > 1 ? "s" : "") + " importé" + (good.length > 1 ? "s" : "") + ".";
+      } catch (e) { $("bk-msg").textContent = "Ce fichier n'est pas une sauvegarde valide."; }
+      $("imp").value = "";
+    };
+    r.readAsText(f);
+  });
+})();
+</script>
+<script>
+if ("serviceWorker" in navigator) { window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); }); }
+</script>
+</body>
+</html>
