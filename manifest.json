@@ -1,7 +1,7 @@
 {
- "name": "Carburant Hunter",
- "short_name": "Carburant",
- "description": "Suivi de consommation du Changan Hunter",
+ "name": "VEHICULES ESPOIRS PLUS",
+ "short_name": "Véhicules EP",
+ "description": "Suivi des véhicules de l'ONG ESPOIR PLUS : carburant, trajets, vidanges",
  "start_url": "./",
  "scope": "./",
  "display": "standalone",
