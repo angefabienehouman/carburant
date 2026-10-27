@@ -23,6 +23,7 @@
   --warn: #B4500B;
   --danger: #B3261E;
   --seg-empty: #DCE3DD;
+  --oil: #7A5A12;
   --font-display: "Arial Narrow", "Roboto Condensed", "Helvetica Neue", Arial, sans-serif;
   color-scheme: light;
   --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -30,13 +31,13 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0E1411; --surface: #161E19; --ink: #E6EEE8; --muted: #92A399; --line: #26332B;
-    --accent: #4CC48A; --accent-ink: #06130C; --warn: #F0A262; --danger: #F2867F; --seg-empty: #222D26;
+    --accent: #4CC48A; --accent-ink: #06130C; --warn: #F0A262; --danger: #F2867F; --seg-empty: #222D26; --oil: #E0B95A;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0E1411; --surface: #161E19; --ink: #E6EEE8; --muted: #92A399; --line: #26332B;
-  --accent: #4CC48A; --accent-ink: #06130C; --warn: #F0A262; --danger: #F2867F; --seg-empty: #222D26;
+  --accent: #4CC48A; --accent-ink: #06130C; --warn: #F0A262; --danger: #F2867F; --seg-empty: #222D26; --oil: #E0B95A;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -80,6 +81,10 @@ details.settings .fields { display: flex; gap: 12px; margin-top: 8px; flex-wrap:
 .alert strong { font-family: var(--font-display); font-size: 1.35rem; letter-spacing: 0.01em; }
 .alert span { font-size: 0.95rem; }
 .notif { margin-top: 10px; }
+.alert.oil { background: var(--oil); }
+.alert.oil.crit { background: var(--danger); }
+.fill.oil { background: var(--oil); }
+.badge.vid { border-color: var(--oil); color: var(--oil); }
 
 /* Trajets */
 .enroute { border: 1px dashed var(--accent); border-radius: 8px; padding: 10px 12px; margin: 10px 0 4px; font-size: 0.95rem; }
@@ -159,6 +164,7 @@ label[hidden] { display: none; }
   <div class="notice" id="offline" hidden>Ce navigateur refuse d'enregistrer les relevés : ils seront perdus à la fermeture. Utilise Exporter pour garder une copie.</div>
 
   <div class="alert" id="alert" role="alert" hidden><strong id="alert-t"></strong><span id="alert-d"></span></div>
+  <div class="alert oil" id="valert" role="alert" hidden><strong id="valert-t"></strong><span id="valert-d"></span></div>
 
   <header class="top">
     <div>
@@ -171,6 +177,7 @@ label[hidden] { display: none; }
         <label for="cap">Réservoir (litres)<input id="cap" type="number" inputmode="decimal" min="1" step="0.5" value="80"></label>
         <label for="bars">Barres de la jauge<input id="bars" type="number" inputmode="numeric" min="2" max="20" step="1" value="8"></label>
         <label for="alerte">Alerte avant la barre (km)<input id="alerte" type="number" inputmode="numeric" min="1" max="200" step="1" value="20"></label>
+        <label for="valerte">Alerte avant la vidange (km)<input id="valerte" type="number" inputmode="numeric" min="10" max="5000" step="10" value="500"></label>
       </div>
       <button type="button" class="del notif" id="notif-btn" hidden>Activer les notifications du téléphone</button>
       <p class="hint">Compte les barres sur ton tableau de bord quand le plein est fait, puis corrige ce nombre si besoin.</p>
@@ -215,6 +222,28 @@ label[hidden] { display: none; }
     <label for="cur" class="cur">Compteur actuel (facultatif)<input id="cur" type="number" inputmode="numeric" min="0" step="1" placeholder="Rempli par tes trajets"></label>
     <ol class="fc" id="fc"></ol>
     <p class="hint">Prévision calculée avec la distance moyenne de tes barres. Les dernières barres durent souvent moins longtemps, garde de la marge.</p>
+  </section>
+
+  <section class="card" aria-labelledby="v-title">
+    <h2 id="v-title">Vidange</h2>
+    <div class="next-big num" id="v-big"></div>
+    <p class="gauge-sub" id="v-sub"></p>
+    <div class="track" id="v-track" hidden><div class="fill" id="v-fill"></div></div>
+    <p class="gauge-sub" id="v-left"></p>
+    <h3 class="sub-h">Enregistrer une vidange</h3>
+    <form id="vform" novalidate>
+      <div class="fields">
+        <label for="v-km">Compteur le jour de la vidange (km)<input id="v-km" type="number" inputmode="numeric" min="0" step="1"></label>
+        <label for="v-int">Km à parcourir jusqu'à la prochaine<input id="v-int" type="number" inputmode="numeric" min="100" step="100" placeholder="Ex. 5 000"></label>
+        <label for="v-date">Date<input id="v-date" type="date"></label>
+        <label for="v-note">Note (facultatif)<input id="v-note" type="text" autocomplete="off" placeholder="Garage, type d'huile, filtre…"></label>
+      </div>
+      <p class="gauge-sub num" id="v-preview"></p>
+      <button class="submit" id="v-submit" type="submit">Enregistrer la vidange</button>
+      <p class="msg" id="v-msg" role="status" aria-live="polite"></p>
+    </form>
+    <h3 class="sub-h">Historique des vidanges</h3>
+    <ul class="log" id="vlog"></ul>
   </section>
 
   <section class="card" aria-labelledby="f-title">
@@ -270,7 +299,7 @@ label[hidden] { display: none; }
     return el;
   }
 
-  var state = { entries: [], cap: 80, bars: 8, alertKm: 20, mode: "barre", nTouched: false, tTouched: false, tMode: null, pendingDelete: null, cur: null };
+  var state = { entries: [], cap: 80, bars: 8, alertKm: 20, vAlertKm: 500, vTouched: false, mode: "barre", nTouched: false, tTouched: false, tMode: null, pendingDelete: null, cur: null };
   var isFuel = function (e) { return e.type === "barre" || e.type === "plein"; };
   var isTrip = function (e) { return e.type === "trajet"; };
   var today = function () { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
@@ -355,6 +384,7 @@ label[hidden] { display: none; }
     renderNext(a);
     renderAlert(a);
     renderTrips(a);
+    renderVidange();
 
     // Journal
     var log = $("log");
@@ -444,16 +474,18 @@ label[hidden] { display: none; }
     return "Notification" in window && navigator.serviceWorker && navigator.serviceWorker.controller;
   }
   function notifyIfNeeded() {
-    var info = alertInfo(analyze());
-    if (!info) return;
-    try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
-    if (!canNotify() || Notification.permission !== "granted") return;
-    var done = ""; try { done = localStorage.getItem("hunter-notified") || ""; } catch (e) {}
-    if (done === info.key) return;
-    try { localStorage.setItem("hunter-notified", info.key); } catch (e) {}
-    navigator.serviceWorker.ready.then(function (r) {
-      return r.showNotification(info.title, { body: info.detail, icon: "icon-192.png", tag: "barre", vibrate: [200, 100, 200] });
-    }).catch(function () {});
+    [["barre", alertInfo(analyze())], ["vidange", vidangeAlert()]].forEach(function (pair) {
+      var kind = pair[0], info = pair[1], slot = "hunter-notified" + (kind === "barre" ? "" : "-" + kind);
+      if (!info) return;
+      var done = ""; try { done = localStorage.getItem(slot) || ""; } catch (e) {}
+      if (done === info.key) return;
+      try { localStorage.setItem(slot, info.key); } catch (e) {}
+      try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
+      if (!canNotify() || Notification.permission !== "granted") return;
+      navigator.serviceWorker.ready.then(function (r) {
+        return r.showNotification(info.title, { body: info.detail, icon: "icon-192.png", tag: kind, vibrate: [200, 100, 200] });
+      }).catch(function () {});
+    });
   }
   function setupNotifButton() {
     var b = $("notif-btn");
@@ -462,6 +494,92 @@ label[hidden] { display: none; }
   }
   $("notif-btn").addEventListener("click", function () {
     Notification.requestPermission().then(function () { setupNotifButton(); }).catch(function () {});
+  });
+
+  /* ---------- Vidanges ---------- */
+  function vidanges() {
+    return state.entries.filter(function (e) { return e.type === "vidange"; })
+      .sort(function (a, b) { return (b.km - a.km) || String(b.date).localeCompare(String(a.date)); });
+  }
+  function vidangeInfo() {
+    var last = vidanges()[0];
+    if (!last || !(last.intervalle > 0)) return null;
+    var next = last.km + last.intervalle, cur = curKm() || last.km;
+    var done = Math.max(0, cur - last.km), left = next - cur;
+    return { last: last, next: next, cur: cur, done: done, left: left, pct: Math.min(1, done / last.intervalle) };
+  }
+  function vidangeAlert() {
+    var v = vidangeInfo();
+    if (!v || v.left > state.vAlertKm) return null;
+    return v.left > 0
+      ? { key: "v" + v.next, crit: false, title: "Vidange dans ≈ " + nf(v.left) + " km",
+          detail: "Prévue à " + nf(v.next) + " km au compteur (actuel : " + nf(v.cur) + " km). Prends rendez-vous au garage." }
+      : { key: "v" + v.next + "x", crit: true, title: "Vidange dépassée de " + nf(-v.left) + " km",
+          detail: "Elle était prévue à " + nf(v.next) + " km. Fais-la dès que possible, puis enregistre-la ici." };
+  }
+  function renderVidange() {
+    var v = vidangeInfo(), list = vidanges();
+    $("v-track").hidden = !v; $("v-left").textContent = "";
+    if (!v) {
+      $("v-big").textContent = "–";
+      $("v-sub").textContent = "Aucune vidange enregistrée. Le jour de la prochaine vidange, saisis le compteur et le nombre de km avant la suivante.";
+    } else {
+      $("v-big").replaceChildren(nf(v.next), h("small", null, "km au compteur"));
+      $("v-sub").textContent = "Prochaine vidange. Dernière vidange à " + nf(v.last.km) + " km le " + fdate(v.last.date) + ", prévue pour " + nf(v.last.intervalle) + " km.";
+      $("v-fill").style.width = Math.round(v.pct * 100) + "%";
+      $("v-fill").className = "fill " + (v.left <= 0 ? "late" : "oil");
+      $("v-left").textContent = v.left > 0
+        ? "Parcouru : " + nf(v.done) + " km · reste ≈ " + nf(v.left) + " km (compteur actuel : " + nf(v.cur) + " km)."
+        : "Dépassée de " + nf(-v.left) + " km (compteur actuel : " + nf(v.cur) + " km).";
+    }
+    var al = vidangeAlert(), box = $("valert");
+    box.hidden = !al;
+    if (al) { box.className = "alert oil" + (al.crit ? " crit" : ""); $("valert-t").textContent = al.title; $("valert-d").textContent = al.detail; }
+
+    if (!state.vTouched) {
+      $("v-km").value = curKm() || "";
+      $("v-int").value = v ? v.last.intervalle : "";
+      $("v-date").value = today();
+      $("v-note").value = "";
+    }
+    vPreview();
+    var vl = $("vlog");
+    if (!list.length) { vl.replaceChildren(h("li", { class: "empty" }, "Aucune vidange enregistrée.")); return; }
+    vl.replaceChildren.apply(vl, list.map(function (e) {
+      var confirm = state.pendingDelete === e.id;
+      return h("li", { class: "row trip" },
+        h("div", { class: "main" },
+          h("div", { class: "km num" }, nf(e.km), " ", h("span", null, "km"), h("span", { class: "badge vid" }, "Vidange")),
+          h("div", { class: "date" }, fdate(e.date)),
+          h("div", { class: "detail num" }, "Prochaine prévue à " + nf(e.km + e.intervalle) + " km (+" + nf(e.intervalle) + " km)" + (e.note ? " · " + e.note : ""))),
+        h("button", { class: "del" + (confirm ? " confirm" : ""), type: "button", "aria-label": "Supprimer la vidange de " + nf(e.km) + " km", onclick: function () { onDelete(e.id); } },
+          confirm ? "Confirmer ?" : "Supprimer"));
+    }));
+  }
+  function vPreview() {
+    var km = parseFloat($("v-km").value), it = parseFloat($("v-int").value);
+    $("v-preview").textContent = km > 0 && it > 0 ? "Prochaine vidange à " + nf(Math.round(km + it)) + " km au compteur." : "";
+  }
+  function vsay(text, err) { var m = $("v-msg"); m.textContent = text; m.className = "msg" + (err ? " err" : ""); }
+  ["v-km", "v-int", "v-date", "v-note"].forEach(function (id) {
+    $(id).addEventListener("input", function () { state.vTouched = true; vPreview(); });
+  });
+  var vbusy = false;
+  $("vform").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    if (vbusy) return;
+    var km = parseFloat($("v-km").value), it = parseFloat($("v-int").value), date = $("v-date").value || today(), note = $("v-note").value.trim();
+    if (!(km > 0)) { vsay("Saisis le kilométrage du compteur le jour de la vidange.", true); return; }
+    if (!(it >= 100)) { vsay("Saisis le nombre de km à parcourir jusqu'à la prochaine vidange (au moins 100).", true); return; }
+    var data = { type: "vidange", km: Math.round(km), intervalle: Math.round(it), date: date };
+    if (note) data.note = note;
+    vbusy = true; $("v-submit").disabled = true;
+    store.add(data).then(function () {
+      vsay("Vidange enregistrée. Prochaine à " + nf(data.km + data.intervalle) + " km.");
+      state.vTouched = false; render();
+    }).catch(function () {
+      vsay("Enregistrement impossible. Vérifie que tu es connecté, puis réessaie.", true);
+    }).then(function () { vbusy = false; $("v-submit").disabled = false; });
   });
 
   /* ---------- Trajets ---------- */
@@ -624,11 +742,12 @@ label[hidden] { display: none; }
   $("m-plein").addEventListener("click", function () { setMode("plein"); });
 
   function onConfig() {
-    var cap = parseFloat($("cap").value), bars = parseInt($("bars").value, 10), al = parseInt($("alerte").value, 10);
-    if (!(cap > 0) || !(bars >= 2 && bars <= 20) || !(al >= 1 && al <= 200)) return;
-    state.cap = cap; state.bars = bars; state.alertKm = al; state.nTouched = false; render();
-    store.saveConfig({ capacite: cap, barres: bars, alerte: al }).catch(function () {});
+    var cap = parseFloat($("cap").value), bars = parseInt($("bars").value, 10), al = parseInt($("alerte").value, 10), val = parseInt($("valerte").value, 10);
+    if (!(cap > 0) || !(bars >= 2 && bars <= 20) || !(al >= 1 && al <= 200) || !(val >= 10 && val <= 5000)) return;
+    state.cap = cap; state.bars = bars; state.alertKm = al; state.vAlertKm = val; state.nTouched = false; render();
+    store.saveConfig({ capacite: cap, barres: bars, alerte: al, alerteVidange: val }).catch(function () {});
   }
+  $("valerte").addEventListener("change", onConfig);
   $("cap").addEventListener("change", onConfig);
   $("bars").addEventListener("change", onConfig);
   $("alerte").addEventListener("change", onConfig);
@@ -636,7 +755,8 @@ label[hidden] { display: none; }
     if (!c || !(c.capacite > 0) || !(c.barres >= 2)) return;
     state.cap = c.capacite; state.bars = c.barres;
     if (c.alerte >= 1) state.alertKm = c.alerte;
-    $("cap").value = state.cap; $("bars").value = state.bars; $("alerte").value = state.alertKm;
+    if (c.alerteVidange >= 10) state.vAlertKm = c.alerteVidange;
+    $("cap").value = state.cap; $("bars").value = state.bars; $("alerte").value = state.alertKm; $("valerte").value = state.vAlertKm;
   }
   setupNotifButton();
   if (navigator.serviceWorker) navigator.serviceWorker.addEventListener("controllerchange", setupNotifButton);
@@ -655,7 +775,7 @@ label[hidden] { display: none; }
   ];
   function persist() {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ entries: state.entries, cfg: { capacite: state.cap, barres: state.bars, alerte: state.alertKm } }));
+      localStorage.setItem(KEY, JSON.stringify({ entries: state.entries, cfg: { capacite: state.cap, barres: state.bars, alerte: state.alertKm, alerteVidange: state.vAlertKm } }));
     } catch (e) { $("offline").hidden = false; }
   }
   function load() {
@@ -687,11 +807,12 @@ label[hidden] { display: none; }
     saveConfig: function () { persist(); return Promise.resolve(); }
   };
   load();
-  $("cap").value = state.cap; $("bars").value = state.bars; $("alerte").value = state.alertKm;
+  $("cap").value = state.cap; $("bars").value = state.bars; $("alerte").value = state.alertKm; $("valerte").value = state.vAlertKm;
   render();
+  setTimeout(notifyIfNeeded, 1500);
 
   $("exp").addEventListener("click", function () {
-    var payload = JSON.stringify({ entries: state.entries, cfg: { capacite: state.cap, barres: state.bars, alerte: state.alertKm } }, null, 1);
+    var payload = JSON.stringify({ entries: state.entries, cfg: { capacite: state.cap, barres: state.bars, alerte: state.alertKm, alerteVidange: state.vAlertKm } }, null, 1);
     var a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
     a.download = "carburant-hunter-sauvegarde.json";
@@ -709,6 +830,7 @@ label[hidden] { display: none; }
         var good = o.entries.filter(function (e) {
           if (!e || typeof e.date !== "string") return false;
           if (e.type === "trajet") return typeof e.depart === "string" && e.kmDepart > 0;
+          if (e.type === "vidange") return e.km > 0 && e.intervalle > 0;
           return (e.type === "barre" || e.type === "plein") && e.km > 0 && (e.type === "plein" || e.n >= 1);
         }).map(function (e, i) { return Object.assign({ id: "i" + Date.now() + "-" + i }, e); });
         state.entries = good;
